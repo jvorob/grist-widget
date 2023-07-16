@@ -156,9 +156,9 @@ function updateMap(data) {
   }
   const map = L.map('map', {layers: [tiles]});
   const markers = L.markerClusterGroup({
-    spiderfyOnMaxZoom: false; //TODO JV NEW
-    disableClusteringAtZoom: 17;
-    maxClusterRadius: 40; //pixels, default 80
+    spiderfyOnMaxZoom: false, //TODO JV NEW
+    disableClusteringAtZoom: 17,
+    maxClusterRadius: 40, //pixels, default 80
   });
   const points = [];
   popups = {};
