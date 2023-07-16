@@ -139,7 +139,8 @@ function updateMap(data) {
     return;
   }
   const tiles = L.tileLayer('//server.arcgisonline.com/ArcGIS/rest/services/NatGeo_World_Map/MapServer/tile/{z}/{y}/{x}', {
-    maxZoom: 18,
+    //maxZoom: 18,
+    maxZoom: 17, //JV: maxzoom 18 gives "no data available in a LOT of places"
     attribution: 'Tiles &copy; Esri &mdash; National Geographic, Esri, DeLorme, NAVTEQ, UNEP-WCMC, USGS, NASA, ESA, METI, NRCAN, GEBCO, NOAA, iPC'
   });
   const error = document.querySelector('.error');
@@ -154,7 +155,11 @@ function updateMap(data) {
     }
   }
   const map = L.map('map', {layers: [tiles]});
-  const markers = L.markerClusterGroup();
+  const markers = L.markerClusterGroup({
+    spiderfyOnMaxZoom: false; //TODO JV NEW
+    disableClusteringAtZoom: 17;
+    maxClusterRadius: 40; //pixels, default 80
+  });
   const points = [];
   popups = {};
   for (const rec of data) {
