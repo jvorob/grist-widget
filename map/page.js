@@ -23,6 +23,24 @@ const GeocodedAddress = 'GeocodedAddress';
 let lastRecord;
 let lastRecords;
 
+
+
+// TODO JV TEMP:
+//Color markers stolen from here:
+//    https://blogs.absyz.com/2019/04/03/customizing-the-markers-in-your-leaflet-map/
+//    https://github.com/pointhi/leaflet-color-markers
+const selectedIcon =  new L.Icon({
+  iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png',
+  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+  iconSize: [25, 41],
+  iconAnchor: [12, 41],
+  popupAnchor: [1, -34],
+  shadowSize: [41, 41]
+});
+const defaultIcon =  new L.Icon.Default();
+
+
+
 const geocoder = L.Control.Geocoder && L.Control.Geocoder.nominatim();
 if (URLSearchParams && location.search && geocoder) {
   const c = new URLSearchParams(location.search).get('geocoder');
@@ -138,11 +156,24 @@ function updateMap(data) {
     " in the Creator Panel.");
     return;
   }
-  const tiles = L.tileLayer('//server.arcgisonline.com/ArcGIS/rest/services/NatGeo_World_Map/MapServer/tile/{z}/{y}/{x}', {
-    //maxZoom: 18,
-    maxZoom: 17, //JV: maxzoom 18 gives "no data available in a LOT of places"
+
+
+// FIXING map tiles. Source:
+//    https://leaflet-extras.github.io/leaflet-providers/preview/
+//    Old source was natgeo world map, but that only has data up to zoom 16
+//    (can't zoom in tighter than about 10 city blocks across)
+const tiles_ESRI_world_street_map= L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
+  attribution: 'Tiles &copy; Esri &mdash; Source: Esri, DeLorme, NAVTEQ, USGS, Intermap, iPC, NRCAN, Esri Japan, METI, Esri China (Hong Kong), Esri (Thailand), TomTom, 2012'
+  });
+
+
+  const tiles_ESRI_NatGeo_world_map = L.tileLayer('//server.arcgisonline.com/ArcGIS/rest/services/NatGeo_World_Map/MapServer/tile/{z}/{y}/{x}', {
+    maxZoom: 16,
     attribution: 'Tiles &copy; Esri &mdash; National Geographic, Esri, DeLorme, NAVTEQ, UNEP-WCMC, USGS, NASA, ESA, METI, NRCAN, GEBCO, NOAA, iPC'
   });
+
+  const tiles = tiles_ESRI_world_street_map;
+  //const tiles = tiles_ESRI_NatGeo_world_map;
   const error = document.querySelector('.error');
   if (error) { error.remove(); }
   if (amap) {
@@ -154,11 +185,23 @@ function updateMap(data) {
       console.warn(e);
     }
   }
-  const map = L.map('map', {layers: [tiles]});
+  const map = L.map('map', {
+    layers: [tiles],
+    //zoomSnap: 1,
+    //zoomDelta: 1,
+    wheelPxPerZoomLevel: 90, //px, default 60, slows zooming
+
+  });
+  //Make sure clusters always show up above points
+  map.createPane('clusters').style.zIndex = 610;
+
   const markers = L.markerClusterGroup({
     spiderfyOnMaxZoom: false, //TODO JV NEW
     disableClusteringAtZoom: 17,
-    maxClusterRadius: 10, //pixels, default 80
+    maxClusterRadius: 40, //pixels, default 80
+    showCoverageOnHover: true, //TODO JV TEMP: for debugging
+
+    clusterPane: 'clusters', //lets uss style z-index for marker clusters
   });
   const points = [];
   popups = {};
@@ -171,15 +214,26 @@ function updateMap(data) {
     }
     const pt = new L.LatLng(lat, lng);
     const title = name;
-    const marker = L.marker(pt, { title  });
+
+
+    let icon = (id == selectedRowId) ? selectedIcon: defaultIcon;
+
+    const marker = L.marker(pt, { title, icon });
     points.push(pt);
     marker.bindPopup(title);
-    markers.addLayer(marker);
+
+    //selected marker should be excluded from clustering
+    if(id == selectedRowId) {
+      map.addLayer(marker);
+    } else {
+      markers.addLayer(marker);
+    }
+
     popups[id] = marker;
   }
   map.addLayer(markers);
   try {
-    map.fitBounds(new L.LatLngBounds(points), {maxZoom: 12, padding: [0, 0]});
+    map.fitBounds(new L.LatLngBounds(points), {maxZoom: 15, padding: [0, 0]});
   } catch (err) {
     console.warn('cannot fit bounds');
   }
@@ -187,7 +241,7 @@ function updateMap(data) {
     const rowId = selectedRowId;
     if (rowId && popups[rowId]) {
       var marker = popups[rowId];
-      if (!marker._icon) { marker.__parent.spiderfy(); }
+      //if (!marker._icon) { marker.__parent.spiderfy(); }
       marker.openPopup();
     }
   }
@@ -196,7 +250,7 @@ function updateMap(data) {
     // event to trigger that exactly. A small timeout seems to work :-(
     // TODO: find a better way; also, if user has changed selection within
     // the map we should respect that.
-    setTimeout(makeSureSelectedMarkerIsShown, 500);
+    //setTimeout(makeSureSelectedMarkerIsShown, 500);
   });
   amap = map;
   makeSureSelectedMarkerIsShown();
