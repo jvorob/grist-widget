@@ -158,7 +158,7 @@ function updateMap(data) {
   const markers = L.markerClusterGroup({
     spiderfyOnMaxZoom: false, //TODO JV NEW
     disableClusteringAtZoom: 17,
-    maxClusterRadius: 20, //pixels, default 80
+    maxClusterRadius: 10, //pixels, default 80
   });
   const points = [];
   popups = {};
