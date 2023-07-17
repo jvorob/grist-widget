@@ -50,6 +50,54 @@ const defaultIcon =  new L.Icon.Default();
 
 
 
+//Copied from _defaultIconCreateFunction in ClusterMarkerGroup
+//Tweaked to highlight if it contains selected row
+//selectedRowClusterIconFactory
+const selectedRowClusterIconFactory = function (selectedMarkerGetter) {
+  return function(cluster) {
+    var childCount = cluster.getChildCount();
+    
+    let selected = false;
+    try {
+      //Oh god I think this is n^3 or something but it's probably fine
+      const selectedMarker = selectedMarkerGetter();
+      selected = cluster.getAllChildMarkers().filter((m) => m == selectedMarker).length > 0;
+      //console.log("DEBUG: clusterIconFunc: " + selectedMarker._popup._content);
+    } catch (e) {
+      console.error("WARNING: Error in clusterIconFactory in map");
+      console.error(e);
+    }
+    //if(childCount > 1) { window.c = window.c || []; window.c.push(cluster);}//TODO JV DEBUG TMP
+
+    var c = ' marker-cluster-';
+    if (childCount < 10) {
+      c += 'small';
+    } else if (childCount < 100) {
+      c += 'medium';
+    } else {
+      c += 'large';
+    }
+
+/* NEEDS CSS:
+.marker-cluster-selected { border: 2px solid #16b378; }
+ */
+
+
+    return new L.DivIcon({ 
+        html: '<div><span>' 
+            + childCount 
+            //+ (selected ? '!' : '')
+            + ' <span aria-label="markers"></span>' 
+            + '</span></div>', 
+        className: 'marker-cluster' + c + (selected ? ' marker-cluster-selected' : ''), 
+        iconSize: new L.Point(40, 40)
+    });
+  }
+};
+
+
+
+
 const geocoder = L.Control.Geocoder && L.Control.Geocoder.nominatim();
 if (URLSearchParams && location.search && geocoder) {
   const c = new URLSearchParams(location.search).get('geocoder');
@@ -219,6 +267,10 @@ function updateMap(data) {
   map.createPane('selectedMarker').style.zIndex = 620;
   map.createPane('clusters').style.zIndex = 610;
 
+  //Make this before markers so iconCreateFunction can pull the selected row out of here
+  popups = {};
+
+
   const markers = L.markerClusterGroup({
     spiderfyOnMaxZoom: true, //TODO JV NEW
     disableClusteringAtZoom: 17, //if spiderfyOnMaxZoom=true, should spiderfy at 17
@@ -228,6 +280,8 @@ function updateMap(data) {
     clusterPane: 'clusters', //lets uss style z-index for marker clusters
 
     animate: JVOPT_ANIMATE_CLUSTERS,
+
+    iconCreateFunction: selectedRowClusterIconFactory(() => popups[selectedRowId]),
   });
 
   // //TODO JV TEMP: try to make animation return after initial setup
@@ -239,7 +293,6 @@ function updateMap(data) {
   // }
 
   const points = [];
-  popups = {};
   for (const rec of data) {
     const {id, name, lng, lat} = getInfo(rec);
     if (String(lng) === '...') { continue; }
