@@ -24,6 +24,15 @@ let lastRecord;
 let lastRecords;
 
 
+const JVOPT_ANIMATE_CLUSTERS = true;
+const JVOPT_SHOW_MODE = 2; 
+const JVOPT_EXCLUDE_SELECTED_FROM_CLUSTERING = false 
+//0 is original
+//1 is to do nothing (works with removing selected row from flow)
+//2 is to zoomToShowLayer (con: won't show all pins)
+//3 is getVisibleParent(...).spiderfy()  (con: bad for zoom)
+//4 is __parent.zoomToShowLayer (???)
+
 
 // TODO JV TEMP:
 //Color markers stolen from here:
@@ -162,18 +171,28 @@ function updateMap(data) {
 //    https://leaflet-extras.github.io/leaflet-providers/preview/
 //    Old source was natgeo world map, but that only has data up to zoom 16
 //    (can't zoom in tighter than about 10 city blocks across)
-const tiles_ESRI_world_street_map= L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
+  const tiles_ESRI_world_street_map= L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
+  //maxNativeZoom: 18, //I'm guessing on this one
+  //maxZoom: 18.5, //lets stretch it a little
   attribution: 'Tiles &copy; Esri &mdash; Source: Esri, DeLorme, NAVTEQ, USGS, Intermap, iPC, NRCAN, Esri Japan, METI, Esri China (Hong Kong), Esri (Thailand), TomTom, 2012'
   });
 
 
   const tiles_ESRI_NatGeo_world_map = L.tileLayer('//server.arcgisonline.com/ArcGIS/rest/services/NatGeo_World_Map/MapServer/tile/{z}/{y}/{x}', {
-    maxZoom: 16,
+    maxNativeZoom: 16,
+    maxZoom: 17, //lets stretch our zoom a bit
     attribution: 'Tiles &copy; Esri &mdash; National Geographic, Esri, DeLorme, NAVTEQ, UNEP-WCMC, USGS, NASA, ESA, METI, NRCAN, GEBCO, NOAA, iPC'
   });
 
+  const tiles_ESRI_WorldGrayCanvas = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
+    maxNativeZoom: 16,
+    maxZoom: 17, //lets stretch our zoom a bit
+    attribution: 'Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ',
+    });
+
   const tiles = tiles_ESRI_world_street_map;
   //const tiles = tiles_ESRI_NatGeo_world_map;
+  //const tiles = tiles_ESRI_WorldGrayCanvas;
   const error = document.querySelector('.error');
   if (error) { error.remove(); }
   if (amap) {
@@ -190,19 +209,35 @@ const tiles_ESRI_world_street_map= L.tileLayer('https://server.arcgisonline.com/
     //zoomSnap: 1,
     //zoomDelta: 1,
     wheelPxPerZoomLevel: 90, //px, default 60, slows zooming
+    //animate: false, //TEST: trying to make row selection less jumpy. Remove after snapping?
+    //zoomAnimation: false,
+    //markerZoomAnimation: false,
 
   });
   //Make sure clusters always show up above points
+  //Default z-index for markers is 600, 650 is where tooltipPane z-index starts
+  map.createPane('selectedMarker').style.zIndex = 620;
   map.createPane('clusters').style.zIndex = 610;
 
   const markers = L.markerClusterGroup({
-    spiderfyOnMaxZoom: false, //TODO JV NEW
-    disableClusteringAtZoom: 17,
-    maxClusterRadius: 40, //pixels, default 80
+    spiderfyOnMaxZoom: true, //TODO JV NEW
+    disableClusteringAtZoom: 17, //if spiderfyOnMaxZoom=true, should spiderfy at 17
+    maxClusterRadius: 30, //pixels, default 80
     showCoverageOnHover: true, //TODO JV TEMP: for debugging
 
     clusterPane: 'clusters', //lets uss style z-index for marker clusters
+
+    animate: JVOPT_ANIMATE_CLUSTERS,
   });
+
+  // //TODO JV TEMP: try to make animation return after initial setup
+  // const restoreAnimate = () => {
+  //   map.options.animate = true;
+  //   map.options.zoomAnimation = true;
+  //   map.options.markerZoomAnimation = true;
+  //   markers.options.animate = true;
+  // }
+
   const points = [];
   popups = {};
   for (const rec of data) {
@@ -216,14 +251,17 @@ const tiles_ESRI_world_street_map= L.tileLayer('https://server.arcgisonline.com/
     const title = name;
 
 
-    let icon = (id == selectedRowId) ? selectedIcon: defaultIcon;
+    const icon = (id == selectedRowId) ? selectedIcon: defaultIcon;
+    const markerOpts = { title, icon };
+    if(selectedRowId == id)
+      {markerOpts.pane = 'selectedMarker'; }
 
-    const marker = L.marker(pt, { title, icon });
+    const marker = L.marker(pt, markerOpts);
     points.push(pt);
     marker.bindPopup(title);
 
-    //selected marker should be excluded from clustering
-    if(id == selectedRowId) {
+    //selected marker should be excluded from clustering, add directly to map
+    if(id == selectedRowId && JVOPT_EXCLUDE_SELECTED_FROM_CLUSTERING) {
       map.addLayer(marker);
     } else {
       markers.addLayer(marker);
@@ -232,6 +270,7 @@ const tiles_ESRI_world_street_map= L.tileLayer('https://server.arcgisonline.com/
     popups[id] = marker;
   }
   map.addLayer(markers);
+
   try {
     map.fitBounds(new L.LatLngBounds(points), {maxZoom: 15, padding: [0, 0]});
   } catch (err) {
@@ -240,9 +279,39 @@ const tiles_ESRI_world_street_map= L.tileLayer('https://server.arcgisonline.com/
   function makeSureSelectedMarkerIsShown() {
     const rowId = selectedRowId;
     if (rowId && popups[rowId]) {
+
+
+      window.m = markers
+
       var marker = popups[rowId];
-      //if (!marker._icon) { marker.__parent.spiderfy(); }
+
+      //JVOPT_SHOW_MODE (at top of file)
+      //0 is original
+      //1 is to do nothing (works with removing selected row from flow)
+      //2 is to zoomToShowLayer (con: won't show all pins)
+      //3 is getVisibleParent(...).spiderfy()  (con: bad for zoom)
+      //4 is __parent.zoomToShowLayer (???)
+
+      if(JVOPT_SHOW_MODE == 0) {
+        if (!marker._icon) { marker.__parent.spiderfy(); }
+      } else if (JVOPT_SHOW_MODE == 1) { //just show full zoomout
+        //noop
+        
+      } else if (JVOPT_SHOW_MODE == 2) { //jump to marker
+        markers.zoomToShowLayer(marker);
+
+      } else if (JVOPT_SHOW_MODE == 3) { //spiderfy top level ancestor
+        const visibleParent = markers.getVisibleParent(marker)
+        if(visibleParent != null) 
+          { visibleParent.spiderfy(); }
+
+      } else if (JVOPT_SHOW_MODE == 4) { //zoom to immediate parent and spiderfy??
+        if (!marker._icon) { markers.zoomToShowLayer(marker.__parent); }
+
+      }
       marker.openPopup();
+      
+
     }
   }
   map.on('zoomend', () => {
@@ -253,6 +322,7 @@ const tiles_ESRI_world_street_map= L.tileLayer('https://server.arcgisonline.com/
     //setTimeout(makeSureSelectedMarkerIsShown, 500);
   });
   amap = map;
+
   makeSureSelectedMarkerIsShown();
 }
 
