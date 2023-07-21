@@ -23,6 +23,81 @@ const GeocodedAddress = 'GeocodedAddress';
 let lastRecord;
 let lastRecords;
 
+
+const JVOPT_ANIMATE_CLUSTERS = true;
+const JVOPT_SHOW_MODE = 2; 
+const JVOPT_EXCLUDE_SELECTED_FROM_CLUSTERING = false 
+//0 is original
+//1 is to do nothing (works with removing selected row from flow)
+//2 is to zoomToShowLayer (con: won't show all pins)
+//3 is getVisibleParent(...).spiderfy()  (con: bad for zoom)
+//4 is __parent.zoomToShowLayer (???)
+
+
+// TODO JV TEMP:
+//Color markers stolen from here:
+//    https://blogs.absyz.com/2019/04/03/customizing-the-markers-in-your-leaflet-map/
+//    https://github.com/pointhi/leaflet-color-markers
+const selectedIcon =  new L.Icon({
+  iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png',
+  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+  iconSize: [25, 41],
+  iconAnchor: [12, 41],
+  popupAnchor: [1, -34],
+  shadowSize: [41, 41]
+});
+const defaultIcon =  new L.Icon.Default();
+
+
+
+//Copied from _defaultIconCreateFunction in ClusterMarkerGroup
+//Tweaked to highlight if it contains selected row
+//selectedRowClusterIconFactory
+const selectedRowClusterIconFactory = function (selectedMarkerGetter) {
+  return function(cluster) {
+    var childCount = cluster.getChildCount();
+    
+    let selected = false;
+    try {
+      //Oh god I think this is n^3 or something but it's probably fine
+      const selectedMarker = selectedMarkerGetter();
+      selected = cluster.getAllChildMarkers().filter((m) => m == selectedMarker).length > 0;
+      //console.log("DEBUG: clusterIconFunc: " + selectedMarker._popup._content);
+    } catch (e) {
+      console.error("WARNING: Error in clusterIconFactory in map");
+      console.error(e);
+    }
+    //if(childCount > 1) { window.c = window.c || []; window.c.push(cluster);}//TODO JV DEBUG TMP
+
+    var c = ' marker-cluster-';
+    if (childCount < 10) {
+      c += 'small';
+    } else if (childCount < 100) {
+      c += 'medium';
+    } else {
+      c += 'large';
+    }
+
+/* NEEDS CSS:
+.marker-cluster-selected { border: 2px solid #16b378; }
+ */
+
+
+    return new L.DivIcon({ 
+        html: '<div><span>' 
+            + childCount 
+            //+ (selected ? '!' : '')
+            + ' <span aria-label="markers"></span>' 
+            + '</span></div>', 
+        className: 'marker-cluster' + c + (selected ? ' marker-cluster-selected' : ''), 
+        iconSize: new L.Point(40, 40)
+    });
+  }
+};
+
+
+
+
 const geocoder = L.Control.Geocoder && L.Control.Geocoder.nominatim();
 if (URLSearchParams && location.search && geocoder) {
   const c = new URLSearchParams(location.search).get('geocoder');
@@ -138,10 +213,34 @@ function updateMap(data) {
     " in the Creator Panel.");
     return;
   }
-  const tiles = L.tileLayer('//server.arcgisonline.com/ArcGIS/rest/services/NatGeo_World_Map/MapServer/tile/{z}/{y}/{x}', {
-    maxZoom: 18,
+
+
+// FIXING map tiles. Source:
+//    https://leaflet-extras.github.io/leaflet-providers/preview/
+//    Old source was natgeo world map, but that only has data up to zoom 16
+//    (can't zoom in tighter than about 10 city blocks across)
+  const tiles_ESRI_world_street_map= L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
+  //maxNativeZoom: 18, //I'm guessing on this one
+  //maxZoom: 18.5, //lets stretch it a little
+  attribution: 'Tiles &copy; Esri &mdash; Source: Esri, DeLorme, NAVTEQ, USGS, Intermap, iPC, NRCAN, Esri Japan, METI, Esri China (Hong Kong), Esri (Thailand), TomTom, 2012'
+  });
+
+
+  const tiles_ESRI_NatGeo_world_map = L.tileLayer('//server.arcgisonline.com/ArcGIS/rest/services/NatGeo_World_Map/MapServer/tile/{z}/{y}/{x}', {
+    maxNativeZoom: 16,
+    maxZoom: 17, //lets stretch our zoom a bit
     attribution: 'Tiles &copy; Esri &mdash; National Geographic, Esri, DeLorme, NAVTEQ, UNEP-WCMC, USGS, NASA, ESA, METI, NRCAN, GEBCO, NOAA, iPC'
   });
+
+  const tiles_ESRI_WorldGrayCanvas = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
+    maxNativeZoom: 16,
+    maxZoom: 17, //lets stretch our zoom a bit
+    attribution: 'Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ',
+    });
+
+  const tiles = tiles_ESRI_world_street_map;
+  //const tiles = tiles_ESRI_NatGeo_world_map;
+  //const tiles = tiles_ESRI_WorldGrayCanvas;
   const error = document.querySelector('.error');
   if (error) { error.remove(); }
   if (amap) {
@@ -153,10 +252,47 @@ function updateMap(data) {
       console.warn(e);
     }
   }
-  const map = L.map('map', {layers: [tiles]});
-  const markers = L.markerClusterGroup();
-  const points = [];
+  const map = L.map('map', {
+    layers: [tiles],
+    //zoomSnap: 1,
+    //zoomDelta: 1,
+    wheelPxPerZoomLevel: 90, //px, default 60, slows zooming
+    //animate: false, //TEST: trying to make row selection less jumpy. Remove after snapping?
+    //zoomAnimation: false,
+    //markerZoomAnimation: false,
+
+  });
+  //Make sure clusters always show up above points
+  //Default z-index for markers is 600, 650 is where tooltipPane z-index starts
+  map.createPane('selectedMarker').style.zIndex = 620;
+  map.createPane('clusters').style.zIndex = 610;
+
+  //Make this before markers so iconCreateFunction can pull the selected row out of here
   popups = {};
+
+
+  const markers = L.markerClusterGroup({
+    spiderfyOnMaxZoom: true, //TODO JV NEW
+    disableClusteringAtZoom: 17, //if spiderfyOnMaxZoom=true, should spiderfy at 17
+    maxClusterRadius: 30, //pixels, default 80
+    showCoverageOnHover: true, //TODO JV TEMP: for debugging
+
+    clusterPane: 'clusters', //lets uss style z-index for marker clusters
+
+    animate: JVOPT_ANIMATE_CLUSTERS,
+
+    iconCreateFunction: selectedRowClusterIconFactory(() => popups[selectedRowId]),
+  });
+
+  // //TODO JV TEMP: try to make animation return after initial setup
+  // const restoreAnimate = () => {
+  //   map.options.animate = true;
+  //   map.options.zoomAnimation = true;
+  //   map.options.markerZoomAnimation = true;
+  //   markers.options.animate = true;
+  // }
+
+  const points = [];
   for (const rec of data) {
     const {id, name, lng, lat} = getInfo(rec);
     if (String(lng) === '...') { continue; }
@@ -166,24 +302,69 @@ function updateMap(data) {
     }
     const pt = new L.LatLng(lat, lng);
     const title = name;
-    const marker = L.marker(pt, { title  });
+
+
+    const icon = (id == selectedRowId) ? selectedIcon: defaultIcon;
+    const markerOpts = { title, icon };
+    if(selectedRowId == id)
+      {markerOpts.pane = 'selectedMarker'; }
+
+    const marker = L.marker(pt, markerOpts);
     points.push(pt);
     marker.bindPopup(title);
-    markers.addLayer(marker);
+
+    //selected marker should be excluded from clustering, add directly to map
+    if(id == selectedRowId && JVOPT_EXCLUDE_SELECTED_FROM_CLUSTERING) {
+      map.addLayer(marker);
+    } else {
+      markers.addLayer(marker);
+    }
+
     popups[id] = marker;
   }
   map.addLayer(markers);
+
   try {
-    map.fitBounds(new L.LatLngBounds(points), {maxZoom: 12, padding: [0, 0]});
+    map.fitBounds(new L.LatLngBounds(points), {maxZoom: 15, padding: [0, 0]});
   } catch (err) {
     console.warn('cannot fit bounds');
   }
   function makeSureSelectedMarkerIsShown() {
     const rowId = selectedRowId;
     if (rowId && popups[rowId]) {
+
+
+      window.m = markers
+
       var marker = popups[rowId];
-      if (!marker._icon) { marker.__parent.spiderfy(); }
+
+      //JVOPT_SHOW_MODE (at top of file)
+      //0 is original
+      //1 is to do nothing (works with removing selected row from flow)
+      //2 is to zoomToShowLayer (con: won't show all pins)
+      //3 is getVisibleParent(...).spiderfy()  (con: bad for zoom)
+      //4 is __parent.zoomToShowLayer (???)
+
+      if(JVOPT_SHOW_MODE == 0) {
+        if (!marker._icon) { marker.__parent.spiderfy(); }
+      } else if (JVOPT_SHOW_MODE == 1) { //just show full zoomout
+        //noop
+        
+      } else if (JVOPT_SHOW_MODE == 2) { //jump to marker
+        markers.zoomToShowLayer(marker);
+
+      } else if (JVOPT_SHOW_MODE == 3) { //spiderfy top level ancestor
+        const visibleParent = markers.getVisibleParent(marker)
+        if(visibleParent != null) 
+          { visibleParent.spiderfy(); }
+
+      } else if (JVOPT_SHOW_MODE == 4) { //zoom to immediate parent and spiderfy??
+        if (!marker._icon) { markers.zoomToShowLayer(marker.__parent); }
+
+      }
       marker.openPopup();
+      
+
     }
   }
   map.on('zoomend', () => {
@@ -191,9 +372,10 @@ function updateMap(data) {
     // event to trigger that exactly. A small timeout seems to work :-(
     // TODO: find a better way; also, if user has changed selection within
     // the map we should respect that.
-    setTimeout(makeSureSelectedMarkerIsShown, 500);
+    //setTimeout(makeSureSelectedMarkerIsShown, 500);
   });
   amap = map;
+
   makeSureSelectedMarkerIsShown();
 }
 
