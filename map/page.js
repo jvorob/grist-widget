@@ -34,13 +34,11 @@ const JVOPT_EXCLUDE_SELECTED_FROM_CLUSTERING = false
 //4 is __parent.zoomToShowLayer (???)
 
 
-// TODO JV TEMP:
-//Color markers stolen from here:
-//    https://blogs.absyz.com/2019/04/03/customizing-the-markers-in-your-leaflet-map/
-//    https://github.com/pointhi/leaflet-color-markers
+//Color markers downloaded from leaflet repo, color-shifted to green
 const selectedIcon =  new L.Icon({
-  iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png',
-  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+  iconUrl: 'marker-icon-green.png',
+  iconRetinaUrl: 'marker-icon-green-2x.png',
+  shadowUrl: 'marker-shadow.png',
   iconSize: [25, 41],
   iconAnchor: [12, 41],
   popupAnchor: [1, -34],
