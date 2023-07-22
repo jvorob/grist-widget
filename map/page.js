@@ -242,7 +242,7 @@ function updateMap(data) {
 
   popups = {}; // Map: {[rowid]: L.marker}
   // Make this before markerClusterGroup so iconCreateFunction
-  // can pull the current selectedRow out of popups
+  // can fetch the currently selected marker from popups by function closure
 
   const markers = L.markerClusterGroup({
     disableClusteringAtZoom: 18,
@@ -269,7 +269,7 @@ function updateMap(data) {
 
     const marker = L.marker(pt, {
       title: name,
-      icon: (id == selectedRowId) ? selectedIcon: defaultIcon,
+      icon: (id == selectedRowId) ?  selectedIcon    :  defaultIcon,
       pane: (id == selectedRowId) ? "selectedMarker" : "otherMarkers",
     });
 
