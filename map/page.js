@@ -25,6 +25,7 @@ let lastRecords;
 
 
 //Color markers downloaded from leaflet repo, color-shifted to green
+//Used to show currently selected pin
 const selectedIcon =  new L.Icon({
   iconUrl: 'marker-icon-green.png',
   iconRetinaUrl: 'marker-icon-green-2x.png',
@@ -42,9 +43,10 @@ const defaultIcon =  new L.Icon.Default();
 // Given a function `() => selectedMarker`, return a cluster icon create function
 // that can be passed to MarkerClusterGroup({iconCreateFunction: ... } )
 //
-// Selected cluster gets the '.marker-cluster-selected' class, which is defined in screen.css
+// Cluster with selected record gets the '.marker-cluster-selected' class
+// (defined in screen.css)
 // 
-// Copied from _defaultIconCreateFunction in Leaflet: ClusterMarkerGroup
+// Copied from _defaultIconCreateFunction in ClusterMarkerGroup
 //    https://github.com/Leaflet/Leaflet.markercluster/blob/master/src/MarkerClusterGroup.js
 const selectedRowClusterIconFactory = function (selectedMarkerGetter) {
   return function(cluster) {
@@ -227,36 +229,34 @@ function updateMap(data) {
   }
   const map = L.map('map', {
     layers: [tiles],
-    //zoomSnap: 1,
-    //zoomDelta: 1,
-    //TODO JV:
-    wheelPxPerZoomLevel: 90, //px, default 60, slows zooming
-    //animate: false, //TEST: trying to make row selection less jumpy. Remove after snapping?
-    //zoomAnimation: false,
-    //markerZoomAnimation: false,
-
+    wheelPxPerZoomLevel: 90, //px, default 60, slows scrollwheel zoom
   });
+
   //Make sure clusters always show up above points
   //Default z-index for markers is 600, 650 is where tooltipPane z-index starts
   map.createPane('selectedMarker').style.zIndex = 620;
-  map.createPane('clusters').style.zIndex = 610;
+  map.createPane('clusters'      ).style.zIndex = 610;
+  map.createPane('otherMarkers'  ).style.zIndex = 600;
 
-  //Make this before markers so iconCreateFunction can pull the selected row out of here
-  popups = {};
+  const points = []; //L.LatLng[], used for zooming to bounds of all markers
 
+  popups = {}; // Map: {[rowid]: L.marker}
+  // Make this before markerClusterGroup so iconCreateFunction 
+  // can pull the current selectedRow out of popups
 
   const markers = L.markerClusterGroup({
-    spiderfyOnMaxZoom: true, //TODO JV NEW
-    disableClusteringAtZoom: 17, //if spiderfyOnMaxZoom=true, should spiderfy at 17
-    maxClusterRadius: 30, //pixels, default 80
-    showCoverageOnHover: true, //TODO JV TEMP: for debugging
+    disableClusteringAtZoom: 18, 
+    //If markers are very close together, they'd stay clustered even at max zoom
+    //This disables that behavior explicitly for max zoom (18)
+    maxClusterRadius: 30, //px, default 80 
+    // default behavior clusters too aggressively. It's nice to see individual markers
+    showCoverageOnHover: true, 
 
-    clusterPane: 'clusters', //lets uss style z-index for marker clusters
+    clusterPane: 'clusters', //lets us specify z-index, so cluster icons can be on top
     iconCreateFunction: selectedRowClusterIconFactory(() => popups[selectedRowId]),
   });
 
 
-  const points = [];
   for (const rec of data) {
     const {id, name, lng, lat} = getInfo(rec);
     if (String(lng) === '...') { continue; }
@@ -265,17 +265,15 @@ function updateMap(data) {
       continue;
     }
     const pt = new L.LatLng(lat, lng);
-    const title = name;
-
-
-    const icon = (id == selectedRowId) ? selectedIcon: defaultIcon;
-    const markerOpts = { title, icon };
-    if(selectedRowId == id)
-      {markerOpts.pane = 'selectedMarker'; }
-
-    const marker = L.marker(pt, markerOpts);
-    marker.bindPopup(title);
     points.push(pt);
+
+    const marker = L.marker(pt, {
+      title: name, 
+      icon: (id == selectedRowId) ? selectedIcon: defaultIcon,
+      pane: (id == selectedRowId) ? "selectedMarker" : "otherMarkers",
+    });
+
+    marker.bindPopup(name);
     markers.addLayer(marker);
 
     popups[id] = marker;
