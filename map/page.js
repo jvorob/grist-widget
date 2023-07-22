@@ -18,7 +18,7 @@ const Latitude = "Latitude";
 const Geocode = 'Geocode';
 // Optional - but required for geocoding. Field with address to find (might be formula)
 const Address = 'Address';
-// Optional - but 
+// Optional - but
 const GeocodedAddress = 'GeocodedAddress';
 let lastRecord;
 let lastRecords;
@@ -45,19 +45,19 @@ const defaultIcon =  new L.Icon.Default();
 //
 // Cluster with selected record gets the '.marker-cluster-selected' class
 // (defined in screen.css)
-// 
+//
 // Copied from _defaultIconCreateFunction in ClusterMarkerGroup
 //    https://github.com/Leaflet/Leaflet.markercluster/blob/master/src/MarkerClusterGroup.js
 const selectedRowClusterIconFactory = function (selectedMarkerGetter) {
   return function(cluster) {
     var childCount = cluster.getChildCount();
-    
+
     let isSelected = false;
     try {
       const selectedMarker = selectedMarkerGetter();
 
       // hmm I think this is n log(n) to build all the clusters for the whole map.
-      // It's probably fine though, it only fires once when map markers 
+      // It's probably fine though, it only fires once when map markers
       // are set up or when selectedRow changes
       isSelected = cluster.getAllChildMarkers().filter((m) => m == selectedMarker).length > 0;
     } catch (e) {
@@ -74,12 +74,12 @@ const selectedRowClusterIconFactory = function (selectedMarkerGetter) {
       c += 'large';
     }
 
-    return new L.DivIcon({ 
-        html: '<div><span>' 
-            + childCount 
-            + ' <span aria-label="markers"></span>' 
-            + '</span></div>', 
-        className: 'marker-cluster' + c + (isSelected ? ' marker-cluster-selected' : ''), 
+    return new L.DivIcon({
+        html: '<div><span>'
+            + childCount
+            + ' <span aria-label="markers"></span>'
+            + '</span></div>',
+        className: 'marker-cluster' + c + (isSelected ? ' marker-cluster-selected' : ''),
         iconSize: new L.Point(40, 40)
     });
   }
@@ -241,16 +241,16 @@ function updateMap(data) {
   const points = []; //L.LatLng[], used for zooming to bounds of all markers
 
   popups = {}; // Map: {[rowid]: L.marker}
-  // Make this before markerClusterGroup so iconCreateFunction 
+  // Make this before markerClusterGroup so iconCreateFunction
   // can pull the current selectedRow out of popups
 
   const markers = L.markerClusterGroup({
-    disableClusteringAtZoom: 18, 
+    disableClusteringAtZoom: 18,
     //If markers are very close together, they'd stay clustered even at max zoom
     //This disables that behavior explicitly for max zoom (18)
-    maxClusterRadius: 30, //px, default 80 
+    maxClusterRadius: 30, //px, default 80
     // default behavior clusters too aggressively. It's nice to see individual markers
-    showCoverageOnHover: true, 
+    showCoverageOnHover: true,
 
     clusterPane: 'clusters', //lets us specify z-index, so cluster icons can be on top
     iconCreateFunction: selectedRowClusterIconFactory(() => popups[selectedRowId]),
@@ -268,12 +268,12 @@ function updateMap(data) {
     points.push(pt);
 
     const marker = L.marker(pt, {
-      title: name, 
+      title: name,
       icon: (id == selectedRowId) ? selectedIcon: defaultIcon,
       pane: (id == selectedRowId) ? "selectedMarker" : "otherMarkers",
     });
 
-    marker.bindPopup(name);
+    marker.bindPopup(title);
     markers.addLayer(marker);
 
     popups[id] = marker;
